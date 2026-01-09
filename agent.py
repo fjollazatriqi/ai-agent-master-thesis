@@ -36,8 +36,7 @@ def get_open_github_issues():
         "Accept": "application/vnd.github+json"
     }
     params = {
-        "state": "open",
-        "assignee": "*"
+        "state": "open"
     }
 
     try:
@@ -56,38 +55,14 @@ def get_open_github_issues():
 # AI Reasoning
 # ----------------------------
 def generate_ai_plan(task_description):
-    prompt = f"""
-You are an AI coding assistant.
-
-Task description:
-\"\"\"{task_description}\"\"\"
-
-Generate a starter implementation plan.
-
-Return valid JSON only:
-{{
-  "branch_name": "lowercase-dash-name",
-  "pr_title": "Short PR title",
-  "pr_description": "Detailed PR description",
-  "files": [
-    {{
-      "path": "src/example.py",
-      "content": "# starter code"
-    }}
-  ]
-}}
-"""
-
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-5-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        logging.error(f"AI plan generation failed: {e}")
-        return None
+    return {
+        "branch_name": f"demo-branch-{task_description[:10].replace(' ', '-')}",
+        "pr_title": f"Demo PR for: {task_description[:30]}",
+        "pr_description": f"Auto-generated PR description for task:\n{task_description}",
+        "files": [
+            {"path": "src/example.py", "content": "# starter code\nprint('Hello from AI agent!')"}
+        ]
+    }
 
 # ----------------------------
 # Action: File + Git
