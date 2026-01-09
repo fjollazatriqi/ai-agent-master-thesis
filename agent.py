@@ -12,11 +12,10 @@ import openai
 # ----------------------------
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g. "username/repo"
-SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GIT_DIR = Path(os.getenv("GIT_DIR", "."))
 
-if not all([GITHUB_TOKEN, GITHUB_REPO, SLACK_WEBHOOK, OPENAI_API_KEY]):
+if not all([GITHUB_TOKEN, GITHUB_REPO, OPENAI_API_KEY]):
     raise EnvironmentError("Missing one or more required environment variables.")
 
 openai.api_key = OPENAI_API_KEY
