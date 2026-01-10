@@ -4,7 +4,6 @@ import requests
 import subprocess
 import logging
 from pathlib import Path
-import openai
 
 # ----------------------------
 # Configuration
@@ -37,11 +36,13 @@ def get_open_github_issues():
         return []
 
 # ----------------------------
-# Create a file for the issue
+# Create a file for the issue inside src/
 # ----------------------------
 def create_file_for_issue(issue_number):
-    file_path = GIT_DIR / f"example_issue{issue_number}.py"
-    content = f"# This is auto-generated file for issue #{issue_number}\nprint('Hello from issue {issue_number}')\n"
+    src_dir = GIT_DIR / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)  # ensure src exists
+    file_path = src_dir / f"example_issue{issue_number}.py"
+    content = f"# Auto-generated file for issue #{issue_number}\nprint('Hello from issue {issue_number}')\n"
     file_path.write_text(content)
     subprocess.run(["git", "add", str(file_path)], cwd=GIT_DIR, check=True)
     return file_path
@@ -51,18 +52,15 @@ def create_file_for_issue(issue_number):
 # ----------------------------
 def run_git(issue_number, branch_name, commit_message):
     try:
-        # Switch to main
         subprocess.run(["git", "checkout", "main"], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "pull"], cwd=GIT_DIR, check=True)
 
-        # Create or switch to branch
         existing_branches = subprocess.check_output(["git", "branch"], cwd=GIT_DIR).decode()
         if branch_name in existing_branches:
             subprocess.run(["git", "checkout", branch_name], cwd=GIT_DIR, check=True)
         else:
             subprocess.run(["git", "checkout", "-b", branch_name], cwd=GIT_DIR, check=True)
 
-        # Check for changes
         status = subprocess.check_output(["git", "status", "--porcelain"], cwd=GIT_DIR).decode().strip()
         if status:
             subprocess.run(["git", "commit", "-m", commit_message], cwd=GIT_DIR, check=True)
