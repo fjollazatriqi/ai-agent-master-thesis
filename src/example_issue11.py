@@ -1,1 +1,2 @@
-# TODO: Implement issue #11: Change some text of commet
+# Starter file for issue #11
+print('Hello from issue 11')
