@@ -1,0 +1,1 @@
+# TODO: Implement issue #18: Write a simple function for multiple
