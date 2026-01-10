@@ -78,13 +78,21 @@ def run_git(branch_name, commit_message):
     try:
         subprocess.run(["git", "checkout", "main"], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "pull"], cwd=GIT_DIR, check=True)
-        subprocess.run(["git", "checkout", "-b", branch_name], cwd=GIT_DIR, check=True)
+
+        # Nëse branch ekziston, thjesht checkout
+        existing_branches = subprocess.check_output(["git", "branch"], cwd=GIT_DIR).decode()
+        if branch_name in existing_branches:
+            subprocess.run(["git", "checkout", branch_name], cwd=GIT_DIR, check=True)
+        else:
+            subprocess.run(["git", "checkout", "-b", branch_name], cwd=GIT_DIR, check=True)
+
         subprocess.run(["git", "commit", "-m", commit_message], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=GIT_DIR, check=True)
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Git operation failed: {e}")
         return False
+
 
 # ----------------------------
 # GitHub PR
