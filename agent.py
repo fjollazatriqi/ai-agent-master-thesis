@@ -4,21 +4,17 @@ import requests
 import subprocess
 import logging
 from pathlib import Path
-import json
 import openai
 
 # ----------------------------
-# Configuration & Environment
+# Configuration
 # ----------------------------
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g. "username/repo"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GIT_DIR = Path(os.getenv("GIT_DIR", "."))
 
-if not all([GITHUB_TOKEN, GITHUB_REPO, OPENAI_API_KEY]):
-    raise EnvironmentError("Missing one or more required environment variables.")
-
-openai.api_key = OPENAI_API_KEY
+if not all([GITHUB_TOKEN, GITHUB_REPO]):
+    raise EnvironmentError("Missing required environment variables.")
 
 # ----------------------------
 # Logging
@@ -26,139 +22,98 @@ openai.api_key = OPENAI_API_KEY
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ----------------------------
-# GitHub Issues (Perception)
+# GitHub Issues
 # ----------------------------
 def get_open_github_issues():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
-    }
-    params = {
-        "state": "open"
-    }
-
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    params = {"state": "open"}
     try:
         response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
-        issues = [
-            issue for issue in response.json()
-            if "pull_request" not in issue  # exclude PRs
-        ]
-        return issues
+        return [issue for issue in response.json() if "pull_request" not in issue]
     except Exception as e:
-        logging.error(f"Error fetching GitHub issues: {e}")
+        logging.error(f"Error fetching issues: {e}")
         return []
 
 # ----------------------------
-# AI Reasoning
+# Create a file for the issue
 # ----------------------------
-def generate_ai_plan(task_description):
-    return {
-        "branch_name": f"demo-branch-{task_description[:10].replace(' ', '-')}",
-        "pr_title": f"Demo PR for: {task_description[:30]}",
-        "pr_description": f"Auto-generated PR description for task:\n{task_description}",
-        "files": [
-            {"path": "src/example.py", "content": "# starter code\nprint('Hello from AI agent!')"}
-        ]
-    }
+def create_file_for_issue(issue_number):
+    file_path = GIT_DIR / f"example_issue{issue_number}.py"
+    content = f"# This is auto-generated file for issue #{issue_number}\nprint('Hello from issue {issue_number}')\n"
+    file_path.write_text(content)
+    subprocess.run(["git", "add", str(file_path)], cwd=GIT_DIR, check=True)
+    return file_path
 
 # ----------------------------
-# Action: File + Git
+# Git operations
 # ----------------------------
-def write_files(files):
-    for file in files:
-        path = GIT_DIR / file["path"]
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            f.write(file["content"])
-        subprocess.run(["git", "add", str(path)], cwd=GIT_DIR, check=True)
-
-def run_git(branch_name, commit_message):
+def run_git(issue_number, branch_name, commit_message):
     try:
+        # Switch to main
         subprocess.run(["git", "checkout", "main"], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "pull"], cwd=GIT_DIR, check=True)
 
-        # Nëse branch ekziston, thjesht checkout
+        # Create or switch to branch
         existing_branches = subprocess.check_output(["git", "branch"], cwd=GIT_DIR).decode()
         if branch_name in existing_branches:
             subprocess.run(["git", "checkout", branch_name], cwd=GIT_DIR, check=True)
         else:
             subprocess.run(["git", "checkout", "-b", branch_name], cwd=GIT_DIR, check=True)
 
-        subprocess.run(["git", "commit", "-m", commit_message], cwd=GIT_DIR, check=True)
-        subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=GIT_DIR, check=True)
-        return True
+        # Check for changes
+        status = subprocess.check_output(["git", "status", "--porcelain"], cwd=GIT_DIR).decode().strip()
+        if status:
+            subprocess.run(["git", "commit", "-m", commit_message], cwd=GIT_DIR, check=True)
+            subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=GIT_DIR, check=True)
+            return True
+        else:
+            logging.info(f"No changes to commit for branch {branch_name}.")
+            return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Git operation failed: {e}")
         return False
 
-
 # ----------------------------
-# GitHub PR
+# Create Pull Request
 # ----------------------------
 def create_pr(branch, title, description):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    data = {
-        "title": title,
-        "head": branch,
-        "base": "main",
-        "body": description
-    }
-
+    data = {"title": title, "head": branch, "base": "main", "body": description}
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        return response.json()["html_url"]
+        pr_url = response.json()["html_url"]
+        logging.info(f"PR created: {pr_url}")
+        return pr_url
     except Exception as e:
         logging.error(f"PR creation failed: {e}")
         return None
 
 # ----------------------------
-# Slack Notification
-# ----------------------------
-def notify_slack(message):
-    try:
-        requests.post(SLACK_WEBHOOK, json={"text": message})
-    except Exception as e:
-        logging.error(f"Slack notification failed: {e}")
-
-# ----------------------------
-# Main Agent Loop
+# Main agent loop
 # ----------------------------
 def main():
     issues = get_open_github_issues()
     if not issues:
-        logging.info("No open GitHub issues found.")
+        logging.info("No open GitHub issues.")
         return
 
     for issue in issues:
-        logging.info(f"Processing issue #{issue['number']}: {issue['title']}")
+        number = issue["number"]
+        title = issue["title"]
+        description = issue.get("body") or ""
+        branch_name = f"issue-{number}-{title[:15].replace(' ', '-')}"
+        commit_message = f"Auto commit for issue #{number}"
 
-        description = issue["body"] or issue["title"]
-        plan = generate_ai_plan(description)
-        if not plan:
-            continue
+        logging.info(f"Processing issue #{number}: {title}")
 
-        if not plan.get("branch_name") or not plan.get("pr_title"):
-            logging.warning("Invalid AI output, skipping issue.")
-            continue
+        create_file_for_issue(number)
 
-        write_files(plan.get("files", []))
-
-        if not run_git(plan["branch_name"], plan["pr_title"]):
-            continue
-
-        pr_url = create_pr(
-            plan["branch_name"],
-            plan["pr_title"],
-            plan.get("pr_description", "")
-        )
-
-        if pr_url:
-            notify_slack(f"New PR created for issue #{issue['number']}: {pr_url}")
-            logging.info(f"PR created: {pr_url}")
+        if run_git(number, branch_name, commit_message):
+            create_pr(branch_name, f"PR for issue #{number}: {title}", description)
 
 if __name__ == "__main__":
     main()
