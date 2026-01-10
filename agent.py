@@ -70,9 +70,11 @@ def write_files(files):
     for file in files:
         path = GIT_DIR / file["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
+        content = file["content"] + f"\n# Generated at {time.time()}"
         with open(path, "w") as f:
-            f.write(file["content"])
+            f.write(content)
         subprocess.run(["git", "add", str(path)], cwd=GIT_DIR, check=True)
+
 
 def run_git(branch_name, commit_message):
     try:
