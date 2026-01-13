@@ -1,3 +1,7 @@
 # TODO: Implement issue #20: Create a function that do addition of numbers
 
 # TODO: Implement issue #20: Create a function that do addition of numbers
+
+# TODO: Implement issue #20: Create a function that do addition of numbers
+
+# TODO: Implement issue #20: Create a function that do addition of numbers
