@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 def add(a, b):
     """Return the sum of a and b."""
     return a + b
@@ -30,3 +31,6 @@ def factorial(n):
     for i in range(1, n + 1):
         result *= i
     return result
+=======
+# TODO: Implement issue #32: Document math utility functions
+>>>>>>> 39cdaa779e58d077b8b104127d05999b82c4f4e9

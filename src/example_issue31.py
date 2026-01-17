@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import unittest
 
 def add(a, b):
@@ -39,3 +40,6 @@ class TestMathUtils(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+=======
+# TODO: Implement issue #31: Add unit tests for math utility functions
+>>>>>>> 39cdaa779e58d077b8b104127d05999b82c4f4e9
