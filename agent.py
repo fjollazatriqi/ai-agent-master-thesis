@@ -4,7 +4,7 @@ import requests
 import subprocess
 import logging
 from pathlib import Path
-import openai
+from openai import OpenAI
 
 # ----------------------------
 # Configuration & Environment
@@ -17,12 +17,16 @@ GIT_DIR = Path(os.getenv("GIT_DIR", "."))
 if not all([GITHUB_TOKEN, GITHUB_REPO, OPENAI_API_KEY]):
     raise EnvironmentError("Missing one or more required environment variables.")
 
-openai.api_key = OPENAI_API_KEY
+# OpenAI client (NEW API)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ----------------------------
 # Logging
 # ----------------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # ----------------------------
 # GitHub Issues (Perception)
@@ -38,68 +42,88 @@ def get_open_github_issues():
     try:
         response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
-        issues = [
+        return [
             issue for issue in response.json()
-            if "pull_request" not in issue  # exclude PRs
+            if "pull_request" not in issue
         ]
-        return issues
     except Exception as e:
         logging.error(f"Error fetching GitHub issues: {e}")
         return []
 
 # ----------------------------
-# AI Planning
+# AI Planning (Cognition)
 # ----------------------------
 def generate_ai_plan(task_description, issue_number):
-    clean_title = task_description[:30].replace(' ', '-').replace('–','').replace('—','')
+    clean_title = (
+        task_description[:30]
+        .replace(" ", "-")
+        .replace("–", "")
+        .replace("—", "")
+    )
+
     branch_name = f"issue-{issue_number}-{clean_title}"
     pr_title = f"Update for issue #{issue_number}: {task_description[:50]}"
     pr_description = f"Auto-generated PR for issue #{issue_number}:\n{task_description}"
 
     prompt = f"""
-    Write a Python code snippet for the following task:
-    {task_description}
-    Only return valid Python code, no explanations or comments.
-    """
+Write a Python code snippet for the following task:
+
+{task_description}
+
+Rules:
+- Only valid Python code
+- No explanations
+- No markdown
+"""
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=200
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a senior Python developer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
         )
+
         code_snippet = response.choices[0].message.content.strip()
+
         if not code_snippet:
-            raise ValueError("Empty code snippet returned")
+            raise RuntimeError("Empty AI response")
+
     except Exception as e:
         logging.error(f"OpenAI API call failed: {e}")
-        code_snippet = f"# TODO: Implement issue #{issue_number}: {task_description}"
+        raise RuntimeError("AI generation failed — aborting execution")
 
     file_path = f"src/example_issue{issue_number}.py"
+
     return {
         "branch_name": branch_name,
         "pr_title": pr_title,
         "pr_description": pr_description,
         "files": [
-            {"path": file_path, "content": code_snippet}
+            {
+                "path": file_path,
+                "content": code_snippet
+            }
         ]
     }
 
 # ----------------------------
-# File Handling + Git
+# File Handling + Git (Action)
 # ----------------------------
 def write_files(files):
     for file in files:
         path = GIT_DIR / file["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
+
         if path.exists():
-            # Append new code instead of overwriting
-            with open(path, "a") as f:
+            with open(path, "a", encoding="utf-8") as f:
                 f.write("\n\n" + file["content"])
         else:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(file["content"])
+
         subprocess.run(["git", "add", str(path)], cwd=GIT_DIR, check=True)
 
 def run_git(branch_name, commit_message):
@@ -107,25 +131,32 @@ def run_git(branch_name, commit_message):
         subprocess.run(["git", "checkout", "main"], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "pull"], cwd=GIT_DIR, check=True)
 
-        # Checkout or create branch
-        existing_branches = subprocess.check_output(["git", "branch"], cwd=GIT_DIR).decode()
-        if branch_name in existing_branches:
+        branches = subprocess.check_output(
+            ["git", "branch"], cwd=GIT_DIR
+        ).decode()
+
+        if branch_name in branches:
             subprocess.run(["git", "checkout", branch_name], cwd=GIT_DIR, check=True)
         else:
             subprocess.run(["git", "checkout", "-b", branch_name], cwd=GIT_DIR, check=True)
 
-        # Only commit if changes exist
-        result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=GIT_DIR)
-        if result.returncode != 0:
+        has_changes = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=GIT_DIR
+        ).returncode != 0
+
+        if has_changes:
             subprocess.run(["git", "commit", "-m", commit_message], cwd=GIT_DIR, check=True)
             subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=GIT_DIR, check=True)
+
         return True
+
     except subprocess.CalledProcessError as e:
         logging.error(f"Git operation failed: {e}")
         return False
 
 # ----------------------------
-# GitHub PR
+# GitHub Pull Request
 # ----------------------------
 def create_pr(branch, title, description):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls"
@@ -146,7 +177,7 @@ def create_pr(branch, title, description):
         return None
 
 # ----------------------------
-# Main Loop
+# Main Loop (Agent Runtime)
 # ----------------------------
 def main():
     issues = get_open_github_issues()
@@ -155,8 +186,9 @@ def main():
         return
 
     for issue in issues:
-        issue_number = issue['number']
-        title = issue['title']
+        issue_number = issue["number"]
+        title = issue["title"]
+
         logging.info(f"Processing issue #{issue_number}: {title}")
 
         plan = generate_ai_plan(title, issue_number)
@@ -170,8 +202,6 @@ def main():
             )
             if pr_url:
                 logging.info(f"PR created: {pr_url}")
-            else:
-                logging.error(f"PR creation failed for branch {plan['branch_name']}")
 
 if __name__ == "__main__":
     main()
