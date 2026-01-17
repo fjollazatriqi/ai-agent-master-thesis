@@ -12,12 +12,13 @@ from openai import OpenAI
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g. "username/repo"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 GIT_DIR = Path(os.getenv("GIT_DIR", "."))
 
 if not all([GITHUB_TOKEN, GITHUB_REPO, OPENAI_API_KEY]):
-    raise EnvironmentError("Missing one or more required environment variables.")
+    raise EnvironmentError("Missing required environment variables.")
 
-# OpenAI client (NEW API)
+# OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ----------------------------
@@ -29,7 +30,33 @@ logging.basicConfig(
 )
 
 # ----------------------------
-# GitHub Issues (Perception)
+# Slack Notification
+# ----------------------------
+def notify_slack(issue_number, issue_title, pr_url):
+    if not SLACK_WEBHOOK_URL:
+        logging.warning("SLACK_WEBHOOK_URL not set — skipping Slack notification.")
+        return
+
+    payload = {
+        "text": (
+            f"✅ *Issue #{issue_number} u përfundua*\n"
+            f"*Titulli:* {issue_title}\n"
+            f"*Pull Request:* {pr_url}"
+        )
+    }
+
+    try:
+        response = requests.post(
+            SLACK_WEBHOOK_URL,
+            json=payload,
+            timeout=10
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Slack notification failed: {e}")
+
+# ----------------------------
+# GitHub Issues
 # ----------------------------
 def get_open_github_issues():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
@@ -51,7 +78,7 @@ def get_open_github_issues():
         return []
 
 # ----------------------------
-# AI Planning (Cognition)
+# AI Planning
 # ----------------------------
 def generate_ai_plan(task_description, issue_number):
     clean_title = (
@@ -76,26 +103,18 @@ Rules:
 - No markdown
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a senior Python developer."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0
-        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a senior Python developer."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0
+    )
 
-        code_snippet = response.choices[0].message.content.strip()
-
-        if not code_snippet:
-            raise RuntimeError("Empty AI response")
-
-    except Exception as e:
-        logging.error(f"OpenAI API call failed: {e}")
-        raise RuntimeError("AI generation failed — aborting execution")
-
-    file_path = f"src/example_issue{issue_number}.py"
+    code_snippet = response.choices[0].message.content.strip()
+    if not code_snippet:
+        raise RuntimeError("Empty AI response")
 
     return {
         "branch_name": branch_name,
@@ -103,26 +122,25 @@ Rules:
         "pr_description": pr_description,
         "files": [
             {
-                "path": file_path,
+                "path": f"src/example_issue{issue_number}.py",
                 "content": code_snippet
             }
         ]
     }
 
 # ----------------------------
-# File Handling + Git (Action)
+# File Handling + Git
 # ----------------------------
 def write_files(files):
     for file in files:
         path = GIT_DIR / file["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        if path.exists():
-            with open(path, "a", encoding="utf-8") as f:
-                f.write("\n\n" + file["content"])
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(file["content"])
+        mode = "a" if path.exists() else "w"
+        with open(path, mode, encoding="utf-8") as f:
+            if mode == "a":
+                f.write("\n\n")
+            f.write(file["content"])
 
         subprocess.run(["git", "add", str(path)], cwd=GIT_DIR, check=True)
 
@@ -131,10 +149,7 @@ def run_git(branch_name, commit_message):
         subprocess.run(["git", "checkout", "main"], cwd=GIT_DIR, check=True)
         subprocess.run(["git", "pull"], cwd=GIT_DIR, check=True)
 
-        branches = subprocess.check_output(
-            ["git", "branch"], cwd=GIT_DIR
-        ).decode()
-
+        branches = subprocess.check_output(["git", "branch"], cwd=GIT_DIR).decode()
         if branch_name in branches:
             subprocess.run(["git", "checkout", branch_name], cwd=GIT_DIR, check=True)
         else:
@@ -150,7 +165,6 @@ def run_git(branch_name, commit_message):
             subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=GIT_DIR, check=True)
 
         return True
-
     except subprocess.CalledProcessError as e:
         logging.error(f"Git operation failed: {e}")
         return False
@@ -177,7 +191,7 @@ def create_pr(branch, title, description):
         return None
 
 # ----------------------------
-# Main Loop (Agent Runtime)
+# Main
 # ----------------------------
 def main():
     issues = get_open_github_issues()
@@ -200,8 +214,10 @@ def main():
                 plan["pr_title"],
                 plan["pr_description"]
             )
+
             if pr_url:
                 logging.info(f"PR created: {pr_url}")
+                notify_slack(issue_number, title, pr_url)
 
 if __name__ == "__main__":
     main()
