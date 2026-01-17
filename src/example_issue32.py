@@ -1,0 +1,1 @@
+# TODO: Implement issue #32: Document math utility functions
