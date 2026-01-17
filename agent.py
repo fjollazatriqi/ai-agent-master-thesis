@@ -39,9 +39,9 @@ def notify_slack(issue_number, issue_title, pr_url):
 
     payload = {
         "text": (
-            f"✅ *Issue #{issue_number} u përfundua*\n"
+            f"✅ *Tasku #{issue_number} u përfundua*\n"
             f"*Titulli:* {issue_title}\n"
-            f"*Pull Request:* {pr_url}"
+            f"*Link i Pull Request-it:* {pr_url}"
         )
     }
 
