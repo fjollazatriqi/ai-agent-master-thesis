@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import requests
 import subprocess
@@ -13,7 +16,8 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g. "username/repo"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
-GIT_DIR = Path(os.getenv("GIT_DIR", "."))
+GIT_DIR = Path(".").resolve()
+
 
 if not all([GITHUB_TOKEN, GITHUB_REPO, OPENAI_API_KEY]):
     raise EnvironmentError("Missing required environment variables.")
